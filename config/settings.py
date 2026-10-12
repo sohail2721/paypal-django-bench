@@ -53,7 +53,7 @@ INSTALLED_APPS = [
     'payments.apps.PaymentsConfig',
     'catalogue.apps.CatalogueConfig',
     'stores.apps.StoresConfig',
-    'vendors.apps.VendorsConfig',
+    'discount.apps.DiscountConfig',
     'wishlist.apps.WishlistConfig',
 
     # Third party apps

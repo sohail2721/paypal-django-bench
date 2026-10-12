@@ -3,7 +3,8 @@ from django.db import models
 from django.shortcuts import reverse
 from django.utils.crypto import secrets
 
-from catalogue.models import Timestamp, Product
+from catalogue.abstract import Timestamp
+from catalogue.models import Product
 
 
 # Create your models here.

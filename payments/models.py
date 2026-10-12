@@ -1,6 +1,6 @@
 from django.db import models
 
-from catalogue.models import Timestamp
+from catalogue.abstract import Timestamp
 
 
 # Create your models here.
