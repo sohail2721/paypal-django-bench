@@ -1,6 +1,16 @@
 from django.urls import path
 
-from .views import OrderInstanceView, OrderListView, OrderItemView
+from .views import (
+    CancelOrderView,
+    FulfilOrderView,
+    MyOrdersView,
+    OrderInstanceView,
+    OrderItemView,
+    OrderListView,
+    OrderRefundsView,
+    PayOrderView,
+    PlaceOrderView,
+)
 
 
 urlpatterns = [
@@ -11,4 +21,11 @@ urlpatterns = [
         OrderItemView.as_view(),
         name="order_item"
     ),
+    # PayPal checkout
+    path("orders/", PlaceOrderView.as_view(), name="place_order"),
+    path("orders/<uuid:pk>/pay/", PayOrderView.as_view(), name="order_pay"),
+    path("orders/<uuid:pk>/fulfil/", FulfilOrderView.as_view(), name="order_fulfil"),
+    path("orders/<uuid:pk>/cancel/", CancelOrderView.as_view(), name="order_cancel"),
+    path("orders/<uuid:pk>/refunds/", OrderRefundsView.as_view(), name="order_refunds"),
+    path("my-orders/", MyOrdersView.as_view(), name="my_orders"),
 ]

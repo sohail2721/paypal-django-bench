@@ -26,3 +26,5 @@ referencing==0.35.1
 requests==2.32.3
 rpds-py==0.18.1
 
+pay-pal-server-sdk @ git+https://github.com/sohail2721/sohail-paypal-sdk.git@main
+setuptools<81

@@ -11,3 +11,5 @@ ecommerceDB
 assets/
 media/
 
+.venv
+pip/

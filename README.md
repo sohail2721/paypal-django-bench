@@ -244,6 +244,42 @@ http://localhost:8000/swagger/
 
 <BR>
 
+### PayPal payments and saved cards
+
+PayPal card payments sit alongside the Braintree checkout (which is unchanged). The money is held at
+checkout, taken at fulfilment and returned on a refund. Card numbers are never stored or logged: saved
+cards live in PayPal's vault, and the app keeps only PayPal's token id, the brand, the last 4 digits and
+the expiry.
+
+Configuration (environment variables). The app refuses to start if a required one is missing or blank:
+
+| Variable | Meaning |
+| --- | --- |
+| `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET` | REST app credentials (required) |
+| `PAYPAL_ENVIRONMENT` | `sandbox` (required) |
+| `PAYPAL_CURRENCY` | ISO currency code for all amounts (required) |
+| `PAYPAL_BASE_URL` | Optional. Used verbatim as the base address for every PayPal call, the token request included. Required when the environment is not `sandbox` |
+| `PAYPAL_TIMEOUT` | Optional per-wait timeout in seconds (default 20) |
+
+Endpoints (JWT from `/auth/token/`, header `Authorization: Bearer <access>`):
+
+| Endpoint | Who | What |
+| --- | --- | --- |
+| `POST /api/v1/orders/` | shopper | `{"items": [{"variantId": 1, "quantity": 2}]}` (or `productId`). Priced from the catalogue. Returns `orderId` |
+| `POST /api/v1/orders/{orderId}/pay/` | owner | `{"card": {number, expiry "YYYY-MM", securityCode, name, billingAddress{...countryCode}}}` or `{"paymentMethodId": "..."}`. Authorizes (holds) the total |
+| `POST /api/v1/orders/{orderId}/fulfil/` | staff | Captures the hold and records PayPal's gross, fee and net. A hold past its 3-day honour period is reauthorized first; one that can't be renewed answers 409 `authorization_not_renewable` |
+| `POST /api/v1/orders/{orderId}/cancel/` | staff | Voids the hold before fulfilment |
+| `POST /api/v1/orders/{orderId}/refunds/` | owner or staff | `Idempotency-Key` header required. `{"amount": "5.00"}`, or omit the amount to refund what remains. Returns `refundId` |
+| `GET /api/v1/my-orders/` | shopper | The caller's orders with their payment state |
+| `POST/GET /api/v1/payment-methods/`, `DELETE /api/v1/payment-methods/{id}/` | shopper | Save, list and remove vaulted cards. `paymentMethodId` is returned on save |
+| `GET /api/v1/reconciliation/?from=&to=` | staff | PayPal's transaction report for the range (every 31-day window and every page), lined up against local orders |
+
+Each PayPal write first records a claim in the database (a unique row) and only then calls PayPal.
+So a double-click never authorizes, captures, voids or refunds twice. Run the tests with
+`python manage.py test payments` (PayPal's transport is stubbed; no network is used).
+
+<br>
+
 ### License
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 

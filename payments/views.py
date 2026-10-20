@@ -100,3 +100,82 @@ class Payment(APIView):
         trxn_record.status = "failed"
         trxn_record.save(update_fields=["status", "transaction_id"])
         return Response({"error": f"{result.message}"}, status=status.HTTP_502_BAD_GATEWAY)
+
+
+# ------------------------------------------------------------------------------------------------
+# PayPal: saved cards and reconciliation
+# ------------------------------------------------------------------------------------------------
+from uuid import uuid4  # noqa: E402
+
+from django.utils import timezone as dj_timezone  # noqa: E402
+from django.utils.dateparse import parse_datetime  # noqa: E402
+from rest_framework.generics import GenericAPIView  # noqa: E402
+from rest_framework.permissions import IsAdminUser  # noqa: E402
+
+from . import services as paypal_services  # noqa: E402
+from .exceptions import PaymentsAPIMixin  # noqa: E402
+from .models import SavedCard  # noqa: E402
+from .serializers import CardSerializer, SavedCardSerializer  # noqa: E402
+
+
+class PaymentMethodListView(PaymentsAPIMixin, GenericAPIView):
+    """The caller's saved cards (stored in PayPal's vault)."""
+
+    permission_classes = [IsAuthenticated]
+    serializer_class = SavedCardSerializer
+    pagination_class = None
+
+    def get_queryset(self):
+        return SavedCard.objects.filter(customer=self.request.user, status=SavedCard.Status.ACTIVE)
+
+    @swagger_auto_schema(tags=["Payment methods"], responses={200: SavedCardSerializer(many=True)})
+    def get(self, request):
+        return Response(self.get_serializer(self.get_queryset(), many=True).data)
+
+    @swagger_auto_schema(
+        tags=["Payment methods"], request_body=CardSerializer, responses={201: SavedCardSerializer}
+    )
+    def post(self, request):
+        """Save a card. An optional Idempotency-Key header makes a repeated request return the same card."""
+        card = CardSerializer(data=request.data)
+        card.is_valid(raise_exception=True)
+        request_key = (request.headers.get("Idempotency-Key") or "").strip()[:255] or f"auto-{uuid4()}"
+        saved, created = paypal_services.save_card(
+            request.user, CardSerializer.to_card_input(card.validated_data), request_key=request_key
+        )
+        return Response(
+            SavedCardSerializer(saved).data,
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
+
+
+class PaymentMethodInstanceView(PaymentsAPIMixin, APIView):
+    permission_classes = [IsAuthenticated]
+
+    @swagger_auto_schema(tags=["Payment methods"], responses={204: "Deleted", 404: "Not found"})
+    def delete(self, request, pk):
+        paypal_services.delete_card(request.user, pk)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class ReconciliationView(PaymentsAPIMixin, APIView):
+    """Operator report: PayPal's transactions for a range, lined up against local orders."""
+
+    permission_classes = [IsAdminUser]
+
+    @swagger_auto_schema(tags=["Reconciliation"])
+    def get(self, request):
+        start = self._parse(request.query_params.get("from"), "from")
+        end = self._parse(request.query_params.get("to"), "to")
+        return Response(paypal_services.reconcile(start, end))
+
+    @staticmethod
+    def _parse(value, name):
+        parsed = parse_datetime(value.strip().replace(" ", "+")) if value else None
+        if parsed is None:
+            raise paypal_services.PaymentFlowError(
+                400, f"'{name}' must be an ISO-8601 date-time, e.g. 2026-10-01T00:00:00Z.", code="invalid_range"
+            )
+        if dj_timezone.is_naive(parsed):
+            parsed = dj_timezone.make_aware(parsed, dj_timezone.get_fixed_timezone(0))
+        return parsed

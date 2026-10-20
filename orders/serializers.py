@@ -1,6 +1,9 @@
 from decimal import Decimal
 
+from django.conf import settings
 from rest_framework import serializers
+
+from payments.serializers import PaymentSerializer
 
 from catalogue.serializers import SimpleProductSerializer
 from customers.models import Address
@@ -103,3 +106,62 @@ class OrderSerializer(serializers.ModelSerializer):
         instance.billing_address = address
         instance.save()
         return instance
+
+
+# PayPal checkout API
+class OrderLineInputSerializer(serializers.Serializer):
+    variantId = serializers.IntegerField(required=False, min_value=1)
+    productId = serializers.IntegerField(required=False, min_value=1)
+    quantity = serializers.IntegerField(min_value=1, max_value=1000)
+
+    def validate(self, attrs):
+        if ("variantId" in attrs) == ("productId" in attrs):
+            raise serializers.ValidationError("Provide either 'variantId' or 'productId' for each item.")
+        return attrs
+
+
+class PlaceOrderSerializer(serializers.Serializer):
+    items = OrderLineInputSerializer(many=True, allow_empty=False, max_length=100)
+
+
+class PlacedOrderItemSerializer(serializers.ModelSerializer):
+    variantId = serializers.IntegerField(source="variant_id")
+    productId = serializers.IntegerField(source="product_id")
+    name = serializers.CharField(source="product.name")
+    sku = serializers.CharField(source="variant.sku")
+    unitPrice = serializers.DecimalField(source="unit_price", max_digits=10, decimal_places=2)
+    lineTotal = serializers.DecimalField(source="total_price", max_digits=10, decimal_places=2)
+
+    class Meta:
+        model = OrderItem
+        fields = ["variantId", "productId", "name", "sku", "quantity", "unitPrice", "shipping", "lineTotal"]
+
+
+class PaymentOrderSerializer(serializers.ModelSerializer):
+    """An order with its PayPal payment state."""
+
+    orderId = serializers.UUIDField(source="id", read_only=True)
+    items = PlacedOrderItemSerializer(many=True, read_only=True)
+    subtotal = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
+    shipping = serializers.DecimalField(
+        source="total_shipping", max_digits=10, decimal_places=2, read_only=True
+    )
+    total = serializers.DecimalField(source="total_amount", max_digits=10, decimal_places=2, read_only=True)
+    currency = serializers.SerializerMethodField()
+    payment = serializers.SerializerMethodField()
+    createdAt = serializers.DateTimeField(source="created", read_only=True)
+    updatedAt = serializers.DateTimeField(source="updated", read_only=True)
+
+    class Meta:
+        model = Order
+        fields = [
+            "orderId", "status", "items", "subtotal", "shipping", "total", "currency", "payment",
+            "createdAt", "updatedAt",
+        ]
+
+    def get_currency(self, obj):
+        return settings.PAYPAL_CURRENCY
+
+    def get_payment(self, obj):
+        payment = getattr(obj, "paypal_payment", None)
+        return PaymentSerializer(payment).data if payment is not None else None

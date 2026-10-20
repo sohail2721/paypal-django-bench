@@ -19,6 +19,11 @@ class Order(BaseModel):
         AWAITING_PAYMENT = "awaiting_payment"
         DELIVERED = "delivered"
         CANCELLED = "cancelled"
+        # PayPal flow: payment held at checkout, taken at fulfilment, returned on a refund
+        AUTHORIZED = "authorized"
+        FULFILLED = "fulfilled"
+        PARTIALLY_REFUNDED = "partially_refunded"
+        REFUNDED = "refunded"
 
     id = models.UUIDField(primary_key=True, default=uuid4)
     customer = models.ForeignKey(User, on_delete=models.CASCADE, related_name="orders")
@@ -26,7 +31,7 @@ class Order(BaseModel):
     status = models.CharField(
         choices=OrderStatus.choices,
         default=OrderStatus.AWAITING_PAYMENT,
-        max_length=16,
+        max_length=32,
     )
     offer = models.ForeignKey(
         "discount.Offer",

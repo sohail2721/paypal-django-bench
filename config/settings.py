@@ -165,10 +165,12 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'media/')
 
 
 REST_FRAMEWORK = {
-    # 'DEFAULT_AUTHENTICATION_CLASSES': [
-        # 'rest_framework.authentication.BasicAuthentication',
-        # 'rest_framework_simplejwt.authentication.JWTAuthentication',
-    # ],
+    # JWT (from /auth/token/) added in front of DRF's default session/basic authentication.
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+        'rest_framework.authentication.SessionAuthentication',
+        'rest_framework.authentication.BasicAuthentication',
+    ],
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated'
     ],
@@ -225,3 +227,50 @@ BRAINTREE_CONF = braintree.Configuration(
     public_key=BRAINTREE_PUBLIC_KEY,
     private_key=BRAINTREE_PRIVATE_KEY
 )
+
+
+# PayPal settings
+# Required values fail fast at import time: a missing OR blank value refuses to start the app.
+from django.core.exceptions import ImproperlyConfigured  # noqa: E402
+
+
+def _required_env(name):
+    value = os.environ.get(name, "")
+    if not value.strip():
+        raise ImproperlyConfigured(f"{name} must be set to a non-empty value")
+    return value.strip()
+
+
+PAYPAL_CLIENT_ID = _required_env("PAYPAL_CLIENT_ID")
+PAYPAL_CLIENT_SECRET = _required_env("PAYPAL_CLIENT_SECRET")
+PAYPAL_ENVIRONMENT = _required_env("PAYPAL_ENVIRONMENT").lower()
+PAYPAL_CURRENCY = _required_env("PAYPAL_CURRENCY").upper()
+
+# Optional override, used verbatim as the API base address for every PayPal call (token request included).
+PAYPAL_BASE_URL = os.environ.get("PAYPAL_BASE_URL") or None
+if PAYPAL_BASE_URL is not None and not PAYPAL_BASE_URL.strip():
+    PAYPAL_BASE_URL = None
+
+if PAYPAL_ENVIRONMENT != "sandbox" and PAYPAL_BASE_URL is None:
+    # The SDK's built-in default address is the sandbox; any other environment needs an explicit address.
+    raise ImproperlyConfigured("PAYPAL_BASE_URL must be set when PAYPAL_ENVIRONMENT is not 'sandbox'")
+
+if len(PAYPAL_CURRENCY) != 3 or not PAYPAL_CURRENCY.isalpha():
+    raise ImproperlyConfigured("PAYPAL_CURRENCY must be an ISO 4217 currency code")
+
+PAYPAL_TIMEOUT = float(os.environ.get("PAYPAL_TIMEOUT") or 20.0)
+
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {"console": {"class": "logging.StreamHandler"}},
+    "loggers": {
+        "payments": {"handlers": ["console"], "level": "INFO"},
+        # SDK HTTP logging stays at WARNING: request bodies carry card data and are never dumped.
+        "pay_pal_server_sdk": {"handlers": ["console"], "level": "WARNING"},
+    },
+}
+
+# Let the test runner start (the toolbar refuses to run under tests otherwise); it is never shown in tests.
+DEBUG_TOOLBAR_CONFIG = {"IS_RUNNING_TESTS": False}
